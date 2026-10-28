@@ -2840,6 +2840,21 @@
       margin: 0 0 12px
     }
 
+    .field-error {
+      display: none;
+      color: var(--red);
+      font-size: 13px;
+      margin-top: 6px
+    }
+
+    .field-error.on {
+      display: block
+    }
+
+    .field input.invalid {
+      border-color: var(--red)
+    }
+
     .field label {
       display: block;
       font-weight: 600;
@@ -5711,15 +5726,18 @@
       <h3 id="g-title">Two things, then WhatsApp opens.</h3>
       <p class="fsub">So the reply is about your store, not a pitch. Takes 15 seconds.</p>
       <div class="field"><label for="g-store">Your store link</label><input id="g-store" type="text" name="store"
-          required inputmode="url" placeholder="yourbrand.com" autocomplete="url" autocapitalize="none"></div>
+          required inputmode="url" placeholder="yourbrand.com" autocomplete="url" autocapitalize="none"
+          aria-describedby="g-store-error"><span class="field-error" id="g-store-error" role="alert"></span></div>
       <div class="field" id="g-phone-field"><label for="g-phone">WhatsApp number</label>
         <div class="tel"><span>+91</span><input id="g-phone" type="tel" name="phone" inputmode="numeric"
-            placeholder="10-digit number" autocomplete="tel-national"></div><span class="help">Only so we can reply if
-          WhatsApp doesn't open. No spam calls.</span>
+            placeholder="10-digit number" autocomplete="tel-national" pattern="[6-9][0-9]{9}"
+            aria-describedby="g-phone-help g-phone-error"></div><span class="help" id="g-phone-help">Only so we can reply if
+          WhatsApp doesn't open. No spam calls.</span><span class="field-error" id="g-phone-error" role="alert"></span>
       </div>
       <div class="field"><label>Orders a month</label>
-        <div class="ochips">
-          <label class="ochip"><input type="radio" name="orders" value="Under 100" data-fit="no"><span>Under
+        <div class="ochips" role="radiogroup" aria-label="Orders a month" aria-required="true"
+          aria-describedby="g-orders-error">
+          <label class="ochip"><input type="radio" name="orders" value="Under 100" data-fit="no" required><span>Under
               100</span></label>
           <label class="ochip"><input type="radio" name="orders" value="100 to 500" data-fit="yes"><span>100 to
               500</span></label>
@@ -5728,6 +5746,7 @@
           <label class="ochip"><input type="radio" name="orders" value="2,000+"
               data-fit="yes"><span>2,000+</span></label>
         </div>
+        <span class="field-error" id="g-orders-error" role="alert"></span>
       </div>
       <div class="field" aria-hidden="true"><input class="hp" type="text" name="website" tabindex="-1"
           autocomplete="off"></div>
@@ -5966,17 +5985,81 @@
         });
       }
       var err = $('.err', f), btn = $('button[type=submit]', f);
-      if (phone) phone.addEventListener('input', function () { phone.setCustomValidity(''); });
+      var storeInput = $('#g-store'), storeError = $('#g-store-error');
+      var phoneError = $('#g-phone-error'), orders = $('.ochips', f), ordersError = $('#g-orders-error');
+      var firstOrderInput = $('input[name=orders]', f);
+      var validationStarted = false;
+      if (phone) {
+        phone.required = C.GATE_PHONE !== false;
+      }
+
+      function showFieldError(input, errorElement, message) {
+        errorElement.textContent = message;
+        errorElement.classList.toggle('on', !!message);
+        if (input) {
+          input.classList.toggle('invalid', !!message);
+          if (message) input.setAttribute('aria-invalid', 'true');
+          else input.removeAttribute('aria-invalid');
+        }
+        return !message;
+      }
+
+      function validateFields() {
+        var store = storeInput.value.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
+        var storeMessage = !store
+          ? 'Please enter your store link.'
+          : (!/^([\w-]+\.)+[\w-]{2,}(\/.*)?$/i.test(store)
+            ? 'Enter a valid store URL, like yourbrand.com.'
+            : '');
+        var valid = showFieldError(storeInput, storeError, storeMessage);
+
+        var phoneValue = phone ? phone.value : '';
+        var phoneRequired = C.GATE_PHONE !== false;
+        var phoneValid = phoneRequired
+          ? /^[6-9][0-9]{9}$/.test(phoneValue)
+          : (!phoneValue || /^[6-9][0-9]{9}$/.test(phoneValue));
+        var phoneMessage = phoneValid
+          ? ''
+          : 'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
+        valid = showFieldError(phone, phoneError, phoneMessage) && valid;
+
+        var band = $('input[name=orders]:checked', f);
+        var ordersMessage = band ? '' : 'Please select your monthly order range.';
+        ordersError.textContent = ordersMessage;
+        ordersError.classList.toggle('on', !!ordersMessage);
+        if (ordersMessage) orders.setAttribute('aria-invalid', 'true');
+        else orders.removeAttribute('aria-invalid');
+        return { valid: valid && !ordersMessage, store: store, phone: phoneValue, band: band };
+      }
+
+      [storeInput, phone].forEach(function (input) {
+        if (input) input.addEventListener('input', function () {
+          if (input === phone) phone.value = phone.value.replace(/[^0-9]/g, '');
+          if (validationStarted) validateFields();
+        });
+      });
+      $$('input[name=orders]', f).forEach(function (input) {
+        input.addEventListener('change', function () { if (validationStarted) validateFields(); });
+      });
+
       f.addEventListener('submit', function (e) {
         e.preventDefault();
         if (f.dataset.busy === '1') return;
+        validationStarted = true;
         err.classList.remove('on'); err.textContent = ''; err.style.color = '';
-        var store = $('#g-store').value.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
-        if (!/^([\w-]+\.)+[\w-]{2,}(\/.*)?$/i.test(store)) { err.textContent = 'Enter your store link, like yourbrand.com'; err.classList.add('on'); $('#g-store').focus(); return; }
-        var d = '';
-        if (C.GATE_PHONE !== false) { d = String(phone.value || '').replace(/\D/g, ''); if (d.length > 10) d = d.slice(-10); if (d.length !== 10) { phone.setCustomValidity('Enter your 10-digit WhatsApp number'); phone.reportValidity(); return; } }
-        var band = $('input[name=orders]:checked', f);
-        if (!band) { err.textContent = 'Pick your monthly order range.'; err.classList.add('on'); return; }
+        var validation = validateFields();
+        if (!validation.valid) {
+          var firstInvalid = $('.field-error.on', f);
+          if (firstInvalid) {
+            var input = firstInvalid.id === 'g-store-error' ? storeInput
+              : (firstInvalid.id === 'g-phone-error' ? phone : firstOrderInput);
+            if (input && input.focus) input.focus();
+          }
+          return;
+        }
+        var store = validation.store;
+        var d = validation.phone;
+        var band = validation.band;
         var lead = {};
         new FormData(f).forEach(function (value, key) { if (typeof value === 'string') lead[key] = value; });
         lead.name = store.split('/')[0];
